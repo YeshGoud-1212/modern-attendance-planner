@@ -11,19 +11,19 @@ College Portal (vnrvjiet.ac.in)
         │
         │  User logs in normally (no credentials in our system)
         ▼
-Chrome Extension (extension/)
-        │  Reads DOM after authentication
-        │  Calls internal portal API using browser session
-        │  POSTs structured data to FastAPI
+Chrome Extension (attendance-extension/)
+        │  Fetches portal attendance HTML with browser auth
+        │  Parses subject and overall attendance
+        │  POSTs structured payload to FastAPI
         ▼
 FastAPI Backend (backend/) — localhost:8000
-        │  Computes all analytics
-        │  Returns DashboardResponse JSON
-        │  Stores result via extension → chrome.storage.local
+        │  Computes analytics and bunk projections
+        │  Returns structured dashboard data
+        │  Extension caches results in chrome.storage.local
         ▼
 React Frontend (frontend/) — localhost:5173
-        │  Reads from chrome.storage.local (polls every 5s)
-        │  Displays dashboard, charts, bunk calculator
+        │  Reads cached extension data every 5 seconds
+        │  Displays dashboard, charts, and bunk calculator
 ```
 
 ---
@@ -59,7 +59,7 @@ npm run dev
 1. Open Chrome → go to `chrome://extensions`
 2. Enable **Developer Mode** (top right toggle)
 3. Click **Load unpacked**
-4. Select the `extension/` folder from this project
+4. Select the `attendance-extension/` folder from this project
 5. The 🎓 Atten-Track icon will appear in your toolbar
 
 ---
@@ -69,8 +69,12 @@ npm run dev
 1. Open [VNR Portal](https://automation.vnrvjiet.ac.in/eduprime3) in Chrome
 2. Log in with your college credentials (we never see these)
 3. Click the **Atten-Track** extension icon in the toolbar
-4. Click **⚡ Fetch Attendance**
-5. Switch to http://localhost:5173/dashboard — data loads automatically
+4. Click **📊 Fetch Attendance**
+5. Open `http://localhost:5173`
+6. Enter your roll number and password on the home page
+7. Navigate to `/dashboard` to view your analytics
+
+> The dashboard polls `chrome.storage.local` every 5 seconds, so it updates automatically after the extension saves data.
 
 ---
 
@@ -124,16 +128,17 @@ R = Σ classes_per_day for each day in [today+1 .. semester_end]
 ## 📁 Project Structure
 
 ```
-atten-track-full/
+atten-track-v2/
 ├── backend/
 │   ├── main.py          # FastAPI app, CORS, routes
 │   ├── models.py        # Pydantic request/response models
 │   ├── logic.py         # All attendance math (edge-case safe)
 │   └── requirements.txt
 │
-├── extension/
-│   ├── manifest.json    # Chrome Extension MV3
-│   ├── content.js       # Runs on portal, scrapes + sends data
+├── attendance-extension/
+│   ├── manifest.json    # Chrome Extension MV3 config
+│   ├── background.js    # Background service worker
+│   ├── content.js       # Portal extraction + backend POST
 │   ├── popup.html       # Extension popup UI
 │   ├── popup.js         # Popup logic + messaging
 │   └── icons/           # Extension icons
