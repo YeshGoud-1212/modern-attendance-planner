@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 8% 6%;
+    --foreground: 240 20% 95%;
+    --card: 240 10% 8%;
+    --card-foreground: 240 20% 95%;
+    --glass: 240 15% 12%;
+    --glass-border: 240 20% 25%;
+    --neon-purple: 270 100% 70%;
+    --neon-cyan: 180 100% 65%;
+    --neon-pink: 320 100% 75%;
+    --neon-green: 120 100% 65%;
+    --electric-blue: 220 100% 65%;
+    --primary: 270 100% 70%;
+    --primary-foreground: 240 8% 6%;
+    --primary-glow: 270 100% 85%;
+    --secondary: 240 15% 12%;
+    --secondary-foreground: 240 20% 95%;
+    --accent: 180 100% 65%;
+    --accent-foreground: 240 8% 6%;
+    --success: 120 100% 65%;
+    --warning: 45 100% 65%;
+    --destructive: 0 100% 65%;
+    --destructive-foreground: 240 20% 95%;
+    --input: 240 15% 12%;
+    --input-border: 240 20% 25%;
+    --border: 240 20% 20%;
+    --ring: 270 100% 70%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 240 10% 65%;
+    --shadow-neon: 0 0 20px hsl(var(--neon-purple) / 0.5);
+    --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --blur-glass: blur(10px);
+    --gradient-cosmic: linear-gradient(135deg, hsl(270 100% 25%) 0%, hsl(240 50% 15%) 50%, hsl(180 80% 20%) 100%);
+    --gradient-neon: linear-gradient(135deg, hsl(var(--neon-purple)) 0%, hsl(var(--neon-cyan)) 100%);
+    --gradient-glow: radial-gradient(circle at center, hsl(var(--neon-purple) / 0.3) 0%, transparent 70%);
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground overflow-x-hidden;
+    background: var(--gradient-cosmic);
+    min-height: 100vh;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: var(--blur-glass);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-card {
+    @apply glass rounded-3xl p-8;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  }
+
+  .neon-glow {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.5), 0 0 40px hsl(var(--primary) / 0.3);
+  }
+
+  .neon-text {
+    text-shadow: 0 0 10px hsl(var(--primary) / 0.8), 0 0 20px hsl(var(--primary) / 0.6);
+  }
+
+  .hover-lift {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-10px) rotateX(5deg);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 30px hsl(var(--primary) / 0.3);
+  }
+
+  .floating-shapes {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .floating-shape {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--gradient-glow);
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .ripple { position: relative; overflow: hidden; }
+  .ripple::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 0; height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+  .ripple:active::before { width: 300px; height: 300px; }
+
+  .bg-gradient-neon {
+    background: var(--gradient-neon);
+  }
+  .animate-pulse-neon {
+    animation: pulse-neon 2s ease-in-out infinite;
+  }
+}

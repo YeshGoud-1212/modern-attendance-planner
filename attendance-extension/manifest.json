@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Atten-Track — Attendance Analytics",
+  "version": "2.0.0",
+  "description": "Extract attendance from VNR portal, analyze it with AI-powered insights, and get actionable recommendations.",
+  
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab"
+  ],
+  
+  "host_permissions": [
+    "https://automation.vnrvjiet.ac.in/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Atten-Track — Attendance Analyzer"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["https://automation.vnrvjiet.ac.in/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+

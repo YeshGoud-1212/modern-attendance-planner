@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atten-Track</title>
+    <link rel="stylesheet" href="popup.css">
+    <style>
+        /* Fallback minimal styling */
+        body { font-family: sans-serif; width: 400px; }
+        .container { padding: 20px; }
+        button { padding: 10px 15px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Atten-Track</h1>
+            <p class="subtitle">Attendance Analytics</p>
+        </div>
+
+        <!-- Status Section -->
+        <div id="statusSection" class="status-section hidden">
+            <div class="status-indicator" id="statusIndicator"></div>
+            <p id="statusText" class="status-text"></p>
+            <small id="lastUpdatedText" class="last-updated"></small>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingSection" class="section hidden">
+            <div class="spinner"></div>
+            <p>Fetching your attendance...</p>
+            <small>This usually takes 5-10 seconds</small>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorSection" class="section alert alert-error hidden">
+            <div class="alert-icon">⚠️</div>
+            <h3>Error Occurred</h3>
+            <p id="errorMessage"></p>
+            <div class="error-actions">
+                <button id="retryButton" class="btn btn-primary btn-small">
+                    Retry
+                </button>
+                <button id="clearButton" class="btn btn-secondary btn-small">
+                    Clear Data
+                </button>
+            </div>
+        </div>
+
+        <!-- Success State -->
+        <div id="successSection" class="section alert alert-success hidden">
+            <div class="alert-icon">✓</div>
+            <h3>Attendance Fetched Successfully!</h3>
+            
+            <div class="data-card">
+                <div class="data-row">
+                    <span class="data-label">Overall Attendance:</span>
+                    <span class="data-value" id="overallPercentage">--</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                </div>
+                <div class="data-row small">
+                    <span id="attendanceNumbers">-- / --</span>
+                </div>
+            </div>
+
+            <div class="data-card">
+                <div class="data-row">
+                    <span class="data-label">Safe Bunks Remaining:</span>
+                    <span class="data-value" id="safeBunks">--</span>
+                </div>
+            </div>
+
+            <div class="data-card">
+                <div class="data-row">
+                    <span class="data-label">Status:</span>
+                    <span id="riskStatus" class="data-value"></span>
+                </div>
+            </div>
+
+            <small id="fetchedAtText" class="last-updated"></small>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptySection" class="section alert alert-info hidden">
+            <div class="alert-icon">📱</div>
+            <h3>No Data Yet</h3>
+            <p>Fetch your attendance to see analytics and insights.</p>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="button-group">
+            <button id="fetchButton" class="btn btn-primary btn-full">
+                📊 Fetch Attendance
+            </button>
+            <button id="analyzeButton" class="btn btn-secondary btn-full hidden">
+                → Go to Analysis Dashboard
+            </button>
+        </div>
+
+        <!-- Footer Info -->
+        <div class="footer-info">
+            <small>💡 Tip: Fetch your attendance regularly for best results</small>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
