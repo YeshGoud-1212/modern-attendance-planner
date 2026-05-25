@@ -11,7 +11,9 @@
   ],
   
   "host_permissions": [
-    "https://automation.vnrvjiet.ac.in/*"
+    "https://automation.vnrvjiet.ac.in/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
   ],
   
   "background": {

@@ -85,6 +85,7 @@ function showErrorState(errorMessage) {
   elements.statusSection.classList.remove("hidden");
   elements.statusIndicator.className = "status-indicator error";
   elements.statusText.textContent = "Failed to fetch attendance";
+  elements.lastUpdatedText.textContent = "";
 
   elements.errorSection.classList.remove("hidden");
   elements.errorMessage.textContent = errorMessage || "An unknown error occurred";
@@ -126,7 +127,12 @@ function showSuccessState(data) {
   // Update timestamp
   if (data.fetchedAt || data.timestamp) {
     const date = new Date(data.fetchedAt || data.timestamp);
-    elements.fetchedAtText.textContent = `Last updated: ${date.toLocaleString()}`;
+    const updatedText = `Last updated: ${date.toLocaleString()}`;
+    elements.fetchedAtText.textContent = updatedText;
+    elements.lastUpdatedText.textContent = updatedText;
+  } else {
+    elements.fetchedAtText.textContent = "";
+    elements.lastUpdatedText.textContent = "";
   }
 
   elements.fetchButton.disabled = false;
@@ -142,7 +148,24 @@ function showEmptyState() {
   elements.fetchButton.disabled = false;
   elements.fetchButton.textContent = "📊 Fetch Attendance";
   elements.analyzeButton.classList.add("hidden");
+  elements.lastUpdatedText.textContent = "";
   logPopup("Showing empty state");
+}
+
+async function initializePopup() {
+  logPopup("Initializing popup and reading stored data");
+
+  try {
+    const stored = await getStoredAttendanceData();
+    if (stored) {
+      showSuccessState(stored);
+    } else {
+      showEmptyState();
+    }
+  } catch (error) {
+    logError("Popup initialization failed", error);
+    showErrorState(error.message);
+  }
 }
 
 // ── Data Retrieval ────────────────────────────────────────────────────────
@@ -247,6 +270,44 @@ elements.fetchButton.addEventListener("click", async () => {
     showErrorState(error.message);
   }
 });
+
+elements.retryButton.addEventListener("click", () => {
+  logPopup("Retry button clicked");
+  elements.fetchButton.click();
+});
+
+elements.clearButton.addEventListener("click", async () => {
+  logPopup("Clear button clicked");
+  return new Promise((resolve) => {
+    chrome.storage.local.clear(() => {
+      if (chrome.runtime.lastError) {
+        logError("Failed to clear stored data", chrome.runtime.lastError);
+        showErrorState(chrome.runtime.lastError.message);
+      } else {
+        logPopup("Cleared stored attendance data from storage");
+        showEmptyState();
+      }
+      resolve();
+    });
+  });
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === "EXTRACTION_COMPLETE") {
+    logPopup("Received extraction completion event", request);
+
+    if (request.success && request.data) {
+      showSuccessState({ ...request.data, fetchedAt: new Date().toISOString() });
+    } else {
+      showErrorState(request.error || "Extraction failed during background fetch");
+    }
+
+    sendResponse({ received: true });
+  }
+  return true;
+});
+
+initializePopup();
 
 /**
  * Handle analyze button click

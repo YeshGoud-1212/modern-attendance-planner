@@ -18,8 +18,11 @@
 const PORTAL_URL = "https://automation.vnrvjiet.ac.in/Academic/Shared/GetStdAttPer";
 const BACKEND_URL = "http://localhost:8000/api/attendance";
 const EXTRACTION_TIMEOUT = 30000; // 30 seconds
+const AUTO_EXTRACTION_DELAY = 2000; // wait until portal is ready
 const API_RETRY_ATTEMPTS = 3;
 const API_RETRY_DELAY = 1000; // 1 second
+
+let autoExtractionTriggered = false;
 
 // ── Logging Utilities ─────────────────────────────────────────────────────
 
@@ -75,13 +78,29 @@ async function fetchAttendanceFromPortal() {
       throw new Error(`Portal responded with status ${response.status}`);
     }
 
-    const data = await response.json();
-    if (!data.Data) {
+    const text = await response.text();
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch (parseError) {
+      logInfo("Portal returned non-JSON response, falling back to raw text");
+      data = text;
+    }
+
+    const apiPayload = (typeof data === "object" && data !== null)
+      ? data.Data ?? data.data ?? data
+      : data;
+
+    if (!apiPayload) {
       throw new Error("Portal returned empty attendance data");
     }
 
-    logInfo("Successfully fetched attendance from portal");
-    return data.Data;
+    logInfo("Successfully fetched attendance from portal", {
+      payloadType: typeof apiPayload,
+      isArray: Array.isArray(apiPayload)
+    });
+    return apiPayload;
   } catch (error) {
     logError("Failed to fetch attendance from portal", error);
     throw error;
@@ -120,13 +139,35 @@ function parseAttendanceTable(htmlString) {
         total: numbers.total
       };
 
-      // Check if this is the total row
-      if (subjectCode.toLowerCase() === "total") {
+      const normalizedLabel = subjectCode.toLowerCase();
+      const isTotalLabel = normalizedLabel === "total"
+        || normalizedLabel === "overall"
+        || normalizedLabel.includes("total")
+        || normalizedLabel.includes("overall")
+        || normalizedLabel.includes("grand");
+
+      if (isTotalLabel) {
         overall = subjectData;
       } else {
         subjects.push(subjectData);
       }
     });
+
+    if (!overall && subjects.length > 0) {
+      const totals = subjects.reduce(
+        (acc, item) => ({ attended: acc.attended + item.attended, total: acc.total + item.total }),
+        { attended: 0, total: 0 }
+      );
+
+      if (totals.total > 0) {
+        overall = {
+          name: "Total",
+          attended: totals.attended,
+          total: totals.total
+        };
+        logInfo("Fallback overall totals computed from subject rows", totals);
+      }
+    }
 
     if (!overall) {
       throw new Error("Could not find overall attendance totals in portal data");
@@ -142,6 +183,111 @@ function parseAttendanceTable(htmlString) {
     logError("Failed to parse attendance table", error);
     throw error;
   }
+}
+
+function parseAttendanceArray(items) {
+  const subjects = [];
+  let overall = null;
+
+  items.forEach((item) => {
+    if (!item) return;
+
+    if (typeof item === "string") {
+      if (item.includes("<table")) {
+        const parsed = parseAttendanceTable(item);
+        subjects.push(...parsed.subjects);
+        overall = parsed.overall;
+        return;
+      }
+      return;
+    }
+
+    if (typeof item !== "object") return;
+
+    const rawName = item.subjectName || item.Subject || item.name || item.SubjectCode || item.code || item.subject_code || item.SubjectName || item.subject || "";
+    const rawAttendance = item.attendance || item.Attended || item.Cumulative || item.Total || item.value || item.attended || item.total || "";
+
+    const subjectCode = cleanText(String(rawName));
+    const numbers = extractAttendanceNumbers(String(rawAttendance));
+    if (!subjectCode || !numbers) return;
+
+    const subjectData = {
+      name: subjectCode,
+      attended: numbers.attended,
+      total: numbers.total
+    };
+
+    if (subjectCode.toLowerCase().includes("total")) {
+      overall = subjectData;
+    } else {
+      subjects.push(subjectData);
+    }
+  });
+
+  if (!overall && subjects.length > 0) {
+    const totals = subjects.reduce(
+      (acc, item) => ({ attended: acc.attended + item.attended, total: acc.total + item.total }),
+      { attended: 0, total: 0 }
+    );
+    if (totals.total > 0) {
+      overall = totals;
+    }
+  }
+
+  if (!overall) {
+    throw new Error("Could not identify overall attendance totals from portal payload");
+  }
+
+  logInfo("Successfully parsed attendance array payload", { subjectCount: subjects.length });
+  return { overall, subjects };
+}
+
+function parsePortalAttendanceData(rawData) {
+  logInfo("Parsing portal attendance payload", { payloadType: typeof rawData });
+
+  if (!rawData) {
+    throw new Error("Portal returned empty attendance payload");
+  }
+
+  if (typeof rawData === "string") {
+    return parseAttendanceTable(rawData);
+  }
+
+  if (Array.isArray(rawData)) {
+    return parseAttendanceArray(rawData);
+  }
+
+  if (typeof rawData === "object") {
+    if (Array.isArray(rawData.Data) || Array.isArray(rawData.data) || Array.isArray(rawData.rows) || Array.isArray(rawData.subjects)) {
+      return parsePortalAttendanceData(rawData.Data || rawData.data || rawData.rows || rawData.subjects);
+    }
+
+    const htmlFragment = Object.values(rawData).find((value) => typeof value === "string" && value.includes("<table"));
+    if (htmlFragment) {
+      return parseAttendanceTable(htmlFragment);
+    }
+
+    if (rawData.overall_attended != null && rawData.overall_total != null && Array.isArray(rawData.subjects)) {
+      const subjects = rawData.subjects.map((sub) => {
+        const code = cleanText(String(sub.subjectName || sub.Subject || sub.name || sub.SubjectCode || sub.code || sub.subject_code || ""));
+        const numbers = extractAttendanceNumbers(String(sub.attendance || sub.Attended || sub.Cumulative || sub.Total || ""));
+        return code && numbers ? { name: code, attended: numbers.attended, total: numbers.total } : null;
+      }).filter(Boolean);
+
+      if (subjects.length > 0) {
+        return {
+          overall: {
+            name: "Total",
+            attended: Number(rawData.overall_attended),
+            total: Number(rawData.overall_total)
+          },
+          subjects
+        };
+      }
+    }
+  }
+
+  throw new Error("Unsupported attendance data format from portal");
 }
 
 // ── Backend Communication ─────────────────────────────────────────────────
@@ -186,33 +332,26 @@ function extractStudentId() {
  */
 async function sendAttendanceToBackend(payload, attempt = 1) {
   try {
-    logInfo(`Sending attendance to backend (attempt ${attempt}/${API_RETRY_ATTEMPTS})...`);
+    logInfo("Requesting background to post attendance to backend...");
+    return await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "POST_TO_BACKEND", payload }, (response) => {
+        if (chrome.runtime.lastError) {
+          logError("Error sending message to background", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
 
-    const response = await fetch(BACKEND_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Requested-By": "attendance-extension"
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000) // 15 second timeout
+        if (response?.success) {
+          logInfo("Background posted attendance to backend successfully");
+          resolve(response.result);
+        } else {
+          logError("Background failed to post attendance to backend", response?.error);
+          reject(new Error(response?.error || "Background post failed"));
+        }
+      });
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Backend returned ${response.status}: ${errorText}`);
-    }
-
-    const result = await response.json();
-    logInfo("Successfully sent attendance to backend and received processed results");
-    return result;
   } catch (error) {
-    if (attempt < API_RETRY_ATTEMPTS) {
-      logInfo(`Retrying in ${API_RETRY_DELAY}ms...`);
-      await new Promise(resolve => setTimeout(resolve, API_RETRY_DELAY));
-      return sendAttendanceToBackend(payload, attempt + 1);
-    }
-    logError("Failed to send attendance to backend after retries", error);
+    logError("Failed to delegate posting attendance to background", error);
     throw error;
   }
 }
@@ -280,8 +419,15 @@ async function runAttendanceExtraction() {
     logInfo("=== Starting Attendance Extraction Pipeline ===");
 
     // Step 1: Extract attendance from portal
-    const htmlData = await fetchAttendanceFromPortal();
-    const { overall, subjects } = parseAttendanceTable(htmlData);
+    const portalData = await fetchAttendanceFromPortal();
+    const { overall, subjects } = parsePortalAttendanceData(portalData);
+
+    logInfo("Parsed attendance from portal", {
+      overall,
+      subjectCount: subjects.length,
+      subjectsPreview: subjects.slice(0, 5)
+    });
+    console.log("[Atten-Track Content] Confirmed attendance:", { overall, subjects });
     
     // Step 2: Prepare payload
     const studentId = extractStudentId();
@@ -353,7 +499,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 if (window.location.href.includes("automation.vnrvjiet.ac.in")) {
   logInfo("✓ Content script loaded on VNR portal - ready for extraction");
-  
+
+  setTimeout(async () => {
+    if (!autoExtractionTriggered) {
+      autoExtractionTriggered = true;
+      logInfo("Triggering automatic attendance fetch after content script load");
+      const result = await runAttendanceExtraction();
+      if (result.success) {
+        logInfo("Automatic attendance extraction completed successfully", result.data);
+      } else {
+        logError("Automatic attendance extraction failed", result.error);
+      }
+    }
+  }, AUTO_EXTRACTION_DELAY);
+
   // Optionally log portal page structure for debugging
   setTimeout(() => {
     const tables = document.querySelectorAll("table");

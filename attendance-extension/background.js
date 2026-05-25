@@ -31,6 +31,44 @@ const STATE = {
   currentData: null
 };
 
+// ── Backend Configuration ─────────────────────────────────────────────────
+const BACKEND_URL = "http://localhost:8000/api/attendance";
+const API_RETRY_ATTEMPTS_BG = 3;
+const API_RETRY_DELAY_BG = 1000;
+
+async function postToBackend(payload, attempt = 1) {
+  try {
+    logBackground(`Posting attendance to backend (attempt ${attempt}/${API_RETRY_ATTEMPTS_BG})`);
+
+    const resp = await fetch(BACKEND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-By": "attendance-extension"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Backend returned ${resp.status}: ${errText}`);
+    }
+
+    const result = await resp.json();
+    logBackground("Backend returned processed attendance", { result });
+    return result;
+  } catch (err) {
+    if (attempt < API_RETRY_ATTEMPTS_BG) {
+      logBackground(`Retrying backend post in ${API_RETRY_DELAY_BG}ms...`);
+      await new Promise(r => setTimeout(r, API_RETRY_DELAY_BG));
+      return postToBackend(payload, attempt + 1);
+    }
+    logBackground("Failed to post to backend after retries", { error: err.message });
+    throw err;
+  }
+}
+
 // ── Storage Helpers ──────────────────────────────────────────────────────
 
 async function getStoredData() {
@@ -74,6 +112,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case "GET_STORED_DATA":
       handleGetStoredData(sendResponse);
       break;
+
+      case "POST_TO_BACKEND":
+        (async () => {
+          try {
+            const result = await postToBackend(request.payload);
+            sendResponse({ success: true, result });
+          } catch (err) {
+            sendResponse({ success: false, error: err.message });
+          }
+        })();
+        break;
 
     default:
       logBackground(`Unknown message type: ${request.type}`);
