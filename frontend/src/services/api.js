@@ -36,6 +36,25 @@ export async function checkBackendHealth() {
 }
 
 /**
+ * Fetch latest attendance data from backend.
+ * This is the primary way to get data for the dashboard.
+ */
+export async function fetchLatestAttendance() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/attendance/latest`, {
+      signal: AbortSignal.timeout(5000)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    return null;
+  } catch (err) {
+    console.warn("Failed to fetch from backend:", err.message);
+    return null;
+  }
+}
+
+/**
  * Read cached attendance data from Chrome extension storage.
  * Returns null if extension is not installed or no data yet.
  */

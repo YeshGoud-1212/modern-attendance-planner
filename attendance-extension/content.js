@@ -117,41 +117,77 @@ function parseAttendanceTable(htmlString) {
     const doc = parser.parseFromString(htmlString, "text/html");
     const rows = doc.querySelectorAll("table tr");
 
+    logInfo(`DEBUG: Found ${rows.length} rows in table`);
+
     const subjects = [];
     let overall = null;
 
     rows.forEach((row, index) => {
-      // Skip header rows
-      if (index < 2) return;
-
       const cols = row.querySelectorAll("td, th");
-      if (cols.length < 3) return;
+      
+      // Log first few rows for debugging
+      if (index < 5) {
+        const colTexts = Array.from(cols).map(c => cleanText(c.innerText)).join(" | ");
+        logInfo(`DEBUG Row ${index}: ${colTexts}`);
+      }
 
-      const subjectCode = cleanText(cols[0].innerText);
-      const cumulativeText = cleanText(cols[2].innerText);
-      const numbers = extractAttendanceNumbers(cumulativeText);
+      // Skip header rows (first row usually)
+      if (index === 0) return;
+      
+      // Need at least 2-3 columns
+      if (cols.length < 2) return;
+
+      // Try to extract subject code and attendance from different column positions
+      const col0 = cleanText(cols[0].innerText);
+      const col1 = cleanText(cols[1].innerText);
+      const col2 = cols.length > 2 ? cleanText(cols[2].innerText) : "";
+      const col3 = cols.length > 3 ? cleanText(cols[3].innerText) : "";
+
+      // Try multiple patterns to find attendance numbers
+      let numbers = null;
+      let attendanceText = "";
+
+      // Pattern 1: Check if col2 or col3 has attendance (X/Y format)
+      if (col2.includes("/")) {
+        numbers = extractAttendanceNumbers(col2);
+        attendanceText = col2;
+      } else if (col3.includes("/")) {
+        numbers = extractAttendanceNumbers(col3);
+        attendanceText = col3;
+      } else if (col1.includes("/")) {
+        numbers = extractAttendanceNumbers(col1);
+        attendanceText = col1;
+      }
 
       if (!numbers) return;
 
+      // Determine if this is a subject or total row
+      const normalizedCol0 = col0.toLowerCase();
+      const isTotalLabel = normalizedCol0 === "total"
+        || normalizedCol0 === "overall"
+        || normalizedCol0.includes("total")
+        || normalizedCol0.includes("overall")
+        || normalizedCol0.includes("grand")
+        || normalizedCol0 === ""
+        || normalizedCol0.length < 2;
+
       const subjectData = {
-        name: subjectCode,
+        name: col0 || "Total",
         attended: numbers.attended,
         total: numbers.total
       };
 
-      const normalizedLabel = subjectCode.toLowerCase();
-      const isTotalLabel = normalizedLabel === "total"
-        || normalizedLabel === "overall"
-        || normalizedLabel.includes("total")
-        || normalizedLabel.includes("overall")
-        || normalizedLabel.includes("grand");
+      logInfo(`DEBUG: Parsed row ${index} - "${col0}" - ${attendanceText}`, subjectData);
 
       if (isTotalLabel) {
         overall = subjectData;
+        logInfo(`DEBUG: Marked as TOTAL row`, subjectData);
       } else {
         subjects.push(subjectData);
       }
     });
+
+    logInfo(`DEBUG: Parsed ${subjects.length} subjects, overall=${!!overall}`);
 
     if (!overall && subjects.length > 0) {
       const totals = subjects.reduce(
@@ -170,6 +206,7 @@ function parseAttendanceTable(htmlString) {
     }
 
     if (!overall) {
+      logError("DEBUG: No overall found, subjects array:", subjects);
       throw new Error("Could not find overall attendance totals in portal data");
     }
 
@@ -243,31 +280,48 @@ function parseAttendanceArray(items) {
 }
 
 function parsePortalAttendanceData(rawData) {
-  logInfo("Parsing portal attendance payload", { payloadType: typeof rawData });
+  logInfo("Parsing portal attendance payload", { payloadType: typeof rawData, isArray: Array.isArray(rawData) });
 
   if (!rawData) {
     throw new Error("Portal returned empty attendance payload");
   }
 
+  // Log the actual data structure for debugging
+  try {
+    if (typeof rawData === "object" && !Array.isArray(rawData)) {
+      logInfo("DEBUG: Object keys:", Object.keys(rawData));
+    }
+  } catch (e) {
+    logInfo("DEBUG: Could not extract keys from object");
+  }
+
   if (typeof rawData === "string") {
+    logInfo("DEBUG: Raw data is string, attempting HTML parse");
     return parseAttendanceTable(rawData);
   }
 
   if (Array.isArray(rawData)) {
+    logInfo("DEBUG: Raw data is array, attempting array parse");
     return parseAttendanceArray(rawData);
   }
 
   if (typeof rawData === "object") {
+    // Try to extract data from nested properties
     if (Array.isArray(rawData.Data) || Array.isArray(rawData.data) || Array.isArray(rawData.rows) || Array.isArray(rawData.subjects)) {
+      logInfo("DEBUG: Found nested array in object, recursing");
       return parsePortalAttendanceData(rawData.Data || rawData.data || rawData.rows || rawData.subjects);
     }
 
+    // Look for HTML fragment in object values
     const htmlFragment = Object.values(rawData).find((value) => typeof value === "string" && value.includes("<table"));
     if (htmlFragment) {
+      logInfo("DEBUG: Found HTML fragment in object values, parsing as HTML");
       return parseAttendanceTable(htmlFragment);
     }
 
+    // Try to parse object with explicit attendance structure
     if (rawData.overall_attended != null && rawData.overall_total != null && Array.isArray(rawData.subjects)) {
+      logInfo("DEBUG: Found explicit overall_attended/overall_total structure");
       const subjects = rawData.subjects.map((sub) => {
         const code = cleanText(String(sub.subjectName || sub.Subject || sub.name || sub.SubjectCode || sub.code || sub.subject_code || ""));
         const numbers = extractAttendanceNumbers(String(sub.attendance || sub.Attended || sub.Cumulative || sub.Total || ""));
@@ -285,8 +339,33 @@ function parsePortalAttendanceData(rawData) {
         };
       }
     }
+
+    // Try generic object parsing - iterate through all properties
+    logInfo("DEBUG: Attempting generic object parsing");
+    const allPairs = [];
+    for (const [key, value] of Object.entries(rawData)) {
+      if (typeof value === "string" && value.includes("/")) {
+        const nums = extractAttendanceNumbers(value);
+        if (nums) {
+          allPairs.push({ name: key, attended: nums.attended, total: nums.total });
+        }
+      }
+    }
+    
+    if (allPairs.length > 0) {
+      logInfo("DEBUG: Found attendance data in object properties", { count: allPairs.length });
+      const totals = allPairs.reduce(
+        (acc, item) => ({ attended: acc.attended + item.attended, total: acc.total + item.total }),
+        { attended: 0, total: 0 }
+      );
+      return {
+        overall: { name: "Total", attended: totals.attended, total: totals.total },
+        subjects: allPairs.filter(p => !p.name.toLowerCase().includes("total"))
+      };
+    }
   }
 
+  logError("DEBUG: Unsupported attendance data format", { rawData: JSON.stringify(rawData).substring(0, 500) });
   throw new Error("Unsupported attendance data format from portal");
 }
 
@@ -420,12 +499,29 @@ async function runAttendanceExtraction() {
 
     // Step 1: Extract attendance from portal
     const portalData = await fetchAttendanceFromPortal();
-    const { overall, subjects } = parsePortalAttendanceData(portalData);
+    logInfo("DEBUG: Raw portal data type", { type: typeof portalData, isArray: Array.isArray(portalData) });
+    
+    let parsed;
+    try {
+      parsed = parsePortalAttendanceData(portalData);
+    } catch (parseError) {
+      logError("Parse attempt failed, trying alternative formats...", parseError);
+      // Try to create minimal fallback if parsing fails
+      if (typeof portalData === "object" && portalData) {
+        logInfo("DEBUG: Attempting to extract any attendance-like data from raw payload");
+        // Log first 500 chars of stringified data for debugging
+        const dataStr = JSON.stringify(portalData).substring(0, 500);
+        logInfo(`DEBUG: Raw payload preview: ${dataStr}`);
+      }
+      throw parseError;
+    }
+
+    const { overall, subjects } = parsed;
 
     logInfo("Parsed attendance from portal", {
       overall,
       subjectCount: subjects.length,
-      subjectsPreview: subjects.slice(0, 5)
+      subjectsPreview: subjects.slice(0, 3)
     });
     console.log("[Atten-Track Content] Confirmed attendance:", { overall, subjects });
     

@@ -28,7 +28,7 @@ const elements = {
   emptySection: document.getElementById("emptySection"),
 
   fetchButton: document.getElementById("fetchButton"),
-  analyzeButton: document.getElementById("analyzeButton"),
+  dashboardButton: document.getElementById("dashboardButton"),
   retryButton: document.getElementById("retryButton"),
   clearButton: document.getElementById("clearButton"),
 
@@ -91,7 +91,6 @@ function showErrorState(errorMessage) {
   elements.errorMessage.textContent = errorMessage || "An unknown error occurred";
   elements.fetchButton.disabled = false;
   elements.fetchButton.textContent = "📊 Fetch Attendance";
-  elements.analyzeButton.classList.add("hidden");
 
   logPopup("Showing error state", { error: errorMessage });
 }
@@ -137,7 +136,6 @@ function showSuccessState(data) {
 
   elements.fetchButton.disabled = false;
   elements.fetchButton.textContent = "📊 Fetch Attendance";
-  elements.analyzeButton.classList.remove("hidden");
 
   logPopup("Showing success state", { percentage, safeBunks: data.safe_bunks });
 }
@@ -147,7 +145,6 @@ function showEmptyState() {
   elements.emptySection.classList.remove("hidden");
   elements.fetchButton.disabled = false;
   elements.fetchButton.textContent = "📊 Fetch Attendance";
-  elements.analyzeButton.classList.add("hidden");
   elements.lastUpdatedText.textContent = "";
   logPopup("Showing empty state");
 }
@@ -276,6 +273,14 @@ elements.retryButton.addEventListener("click", () => {
   elements.fetchButton.click();
 });
 
+elements.dashboardButton.addEventListener("click", () => {
+  logPopup("Dashboard button clicked - opening dashboard...");
+  const dashboardUrl = "http://localhost:5173/dashboard";
+  chrome.tabs.create({ url: dashboardUrl }, () => {
+    logPopup("Dashboard opened in new tab");
+  });
+});
+
 elements.clearButton.addEventListener("click", async () => {
   logPopup("Clear button clicked");
   return new Promise((resolve) => {
@@ -309,49 +314,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 initializePopup();
 
-/**
- * Handle analyze button click
- * Opens the analysis dashboard URL
- */
-elements.analyzeButton.addEventListener("click", () => {
-  logPopup("Analyze button clicked - opening dashboard...");
-  // Try localhost:5173 first (dev server), fall back to production
-  const dashboardUrls = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173"
-  ];
-  
-  // Open the first available dashboard
-  chrome.tabs.create({ url: dashboardUrls[0] }, () => {
-    logPopup("Dashboard tab opened");
-  });
-});
 
-/**
- * Handle retry button click
- */
-elements.retryButton.addEventListener("click", () => {
-  logPopup("Retry button clicked");
-  elements.fetchButton.click();
-});
-
-/**
- * Handle clear button click
- */
-elements.clearButton.addEventListener("click", async () => {
-  logPopup("Clear button clicked");
-  
-  // Message background script to clear data
-  chrome.runtime.sendMessage({ type: "CLEAR_DATA" }, (response) => {
-    if (chrome.runtime.lastError) {
-      logError("Error clearing data", chrome.runtime.lastError);
-    } else {
-      logPopup("Data cleared successfully");
-      showEmptyState();
-    }
-  });
-});
 
 // ── Initialization ────────────────────────────────────────────────────────
 
